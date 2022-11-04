@@ -20,14 +20,17 @@ using grpc::ServerContext;
 using grpc::Status;
 using namespace DafnyExecutorServer;
 
+extern bool verbose;
+
 class DafnyVerifierServiceImpl : public DafnyVerifierService::Service
 {
     int numWorkers;
     sem_t countSem;
-    // FILE* logFile;
-    // pthread_mutex_t logFileLock;
+    std::string dafnyBinaryPath;
+    pthread_mutex_t logFileLock;
+    FILE* logFile;
 public:
-    DafnyVerifierServiceImpl(int num_workers);
+    DafnyVerifierServiceImpl(int num_workers, std::string dafny_binary_path);
     virtual ~DafnyVerifierServiceImpl() {}
 
     Status Verify(ServerContext *context,

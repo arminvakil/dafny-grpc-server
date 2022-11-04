@@ -22,18 +22,19 @@ using namespace DafnyExecutorServer;
 
 bool verbose = false;
 string ipPort = "0.0.0.0:50051";
+string dafnyBinaryPath = "";
 DafnyVerifierServiceImpl *verifier_service;
 
 void usage(char **argv)
 {
-    std::cout << "Usage: " << argv[0] << " -i IP:PORT\n";
+    std::cout << "Usage: " << argv[0] << " -d Dafny_EXE_PATH [-i IP:PORT]\n";
 }
 
 int main(int argc, char **argv)
 {
     char opt;
 
-    while ((opt = getopt(argc, argv, "hvi")) != -1)
+    while ((opt = getopt(argc, argv, "hvi:d:")) != -1)
     {
         switch (opt)
         {
@@ -43,8 +44,11 @@ int main(int argc, char **argv)
         case 'v':
             verbose = true;
             break;
+        case 'd':
+            dafnyBinaryPath = string(optarg);
+            break;
         case 'i':
-            ipPort = atoi(optarg);
+            ipPort = string(optarg);
             break;
         default:
             std::cerr << "Illegal command line option '" << opt << "'" << endl;
@@ -52,8 +56,13 @@ int main(int argc, char **argv)
             exit(-1);
         }
     }
+    if (dafnyBinaryPath == "") {
+        std::cerr << "Dafny binary path must be specified" << endl;
+        usage(argv);
+        exit(-1);
+    }
 
-    verifier_service = new DafnyVerifierServiceImpl(40);
+    verifier_service = new DafnyVerifierServiceImpl(40, dafnyBinaryPath);
 
     ServerBuilder builder;
     builder.AddListeningPort(ipPort, grpc::InsecureServerCredentials());
