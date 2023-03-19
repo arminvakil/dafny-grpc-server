@@ -36,6 +36,22 @@ public:
     Status Verify(ServerContext *context,
                   const VerificationRequest *request,
                   VerificationResponse *reply) override;
+
+    Status CloneAndVerify(ServerContext *context,
+                  const CloneAndVerifyRequest *request,
+                  VerificationResponse *reply) override;
+
+    Status CreateTmpFolder(ServerContext *context,
+                  const Empty *request,
+                  TmpFolder *reply) override;
+
+    Status RemoveFolder(ServerContext *context,
+                  const TmpFolder *request,
+                  Empty *reply) override;
+
+    Status DuplicateFolder(ServerContext *context,
+                  const TmpFolder *request,
+                  TmpFolder *reply) override;
 };
 
 #endif /* _VERIFIER_SERVICE_H_ */
