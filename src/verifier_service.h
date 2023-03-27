@@ -29,6 +29,8 @@ class DafnyVerifierServiceImpl : public DafnyVerifierService::Service
     std::string dafnyBinaryPath;
     pthread_mutex_t logFileLock;
     FILE* logFile;
+    std::string WriteToTmpFile(const CloneAndVerifyRequest *request);
+    std::string WriteToTmpFile(const VerificationRequest *request);
 public:
     DafnyVerifierServiceImpl(int num_workers, std::string dafny_binary_path);
     virtual ~DafnyVerifierServiceImpl() {}

@@ -108,10 +108,26 @@ Status DafnyVerifierServiceImpl::DuplicateFolder(ServerContext *context,
     return Status::OK;
 }
 
-std::string WriteToTmpFile(const CloneAndVerifyRequest *request)
+std::string DafnyVerifierServiceImpl::WriteToTmpFile(const CloneAndVerifyRequest *request)
 {
     std::string tmpFileName = std::tmpnam(nullptr);
     tmpFileName.append(".dfy");
+    FILE *file = fopen(tmpFileName.c_str(), "w");
+    if (file == NULL)
+    {
+        perror("Error opening temporary file");
+        return "";
+    }
+    fputs(request->code().c_str(), file);
+    fclose(file);
+    return tmpFileName;
+}
+
+std::string DafnyVerifierServiceImpl::WriteToTmpFile(const VerificationRequest *request)
+{
+    std::string tmpFileName = std::tmpnam(nullptr);
+    tmpFileName.append(".dfy");
+    LOG("request creating a temporary file at %s\n", tmpFileName.c_str());
     FILE *file = fopen(tmpFileName.c_str(), "w");
     if (file == NULL)
     {
@@ -130,6 +146,21 @@ Status WriteToFile(const CloneAndVerifyRequest *request)
     {
         std::string msg = "Error opening file ";
         msg.append(request->modifyingfile());
+        perror(msg.c_str());
+        return Status::CANCELLED;
+    }
+    fputs(request->code().c_str(), file);
+    fclose(file);
+    return Status::OK;
+}
+
+Status WriteToFile(const VerificationRequest *request)
+{
+    FILE *file = fopen(request->path().c_str(), "w");
+    if (file == NULL)
+    {
+        std::string msg = "Error opening file ";
+        msg.append(request->path());
         perror(msg.c_str());
         return Status::CANCELLED;
     }
