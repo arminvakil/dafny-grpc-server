@@ -35,12 +35,19 @@ DafnyVerifierServiceImpl::DafnyVerifierServiceImpl(int num_workers, string dafny
 }
 
 Status DafnyVerifierServiceImpl::CreateTmpFolder(ServerContext *context,
-                                                 const Empty *request,
+                                                 const CreateDir *request,
                                                  TmpFolder *reply)
 {
     char tmplate[] = "/dev/shm/verifier_dir_XXXXXX";
     char *tmp_dir = mkdtemp(tmplate);
     reply->set_path(tmp_dir);
+    if (request->owner() != "") {
+        std::string chown_cmd = "sudo chown -R ";
+        chown_cmd.append(request->owner());
+        chown_cmd.append(" ");
+        chown_cmd.append(tmp_dir);
+        system(chown_cmd.c_str());
+    }
     return Status::OK;
 }
 

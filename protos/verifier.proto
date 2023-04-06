@@ -9,9 +9,14 @@ service DafnyVerifierService {
   // Run Dafny on the given code and returns the output
   rpc Verify(VerificationRequest) returns (VerificationResponse) {}
   rpc CloneAndVerify(CloneAndVerifyRequest) returns (VerificationResponse) {}
-  rpc CreateTmpFolder(Empty) returns (TmpFolder) {}
+  rpc CreateTmpFolder(CreateDir) returns (TmpFolder) {}
   rpc RemoveFolder(TmpFolder) returns (Empty) {}
   rpc DuplicateFolder(TmpFolder) returns (TmpFolder) {}
+}
+
+message CreateDir {
+  // changes the owner of the created directory (if specified)
+  string owner = 1;
 }
 
 message Empty {

@@ -44,7 +44,7 @@ public:
                   VerificationResponse *reply) override;
 
     Status CreateTmpFolder(ServerContext *context,
-                  const Empty *request,
+                  const CreateDir *request,
                   TmpFolder *reply) override;
 
     Status RemoveFolder(ServerContext *context,
