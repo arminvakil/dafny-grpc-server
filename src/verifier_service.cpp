@@ -14,6 +14,7 @@
 #define BUFFER_SIZE 10000
 
 using namespace std;
+using namespace std::chrono;
 using grpc::StatusCode;
 
 #define LOG(...)                              \
@@ -189,9 +190,8 @@ Status DafnyVerifierServiceImpl::CloneAndVerify(ServerContext *context,
     char *tmp_dir = NULL;
     std::string dir_to_delete = "";
     string requestId;
-    auto start = std::chrono::system_clock::now();
-    std::time_t start_time = std::chrono::system_clock::to_time_t(start);
-    reply->set_starttime(start_time);
+    auto start = time_point_cast<milliseconds>(system_clock::now());
+    auto start_from_epoch = start.time_since_epoch().count();
 
     if (request->directorypath() != "") {
         if (stat(request->directorypath().c_str(), &info) != 0) {
@@ -323,12 +323,11 @@ Status DafnyVerifierServiceImpl::CloneAndVerify(ServerContext *context,
     sem_getvalue(&countSem, &val);
     // std::cerr << "sem_value at exit: " << val << "\n";
     sem_post(&countSem);
-    auto end = std::chrono::system_clock::now();
-    std::chrono::duration<float> elapsed_seconds = end - start;
-    reply->set_executiontime(elapsed_seconds.count());
-    std::time_t end_time = std::chrono::system_clock::to_time_t(end);
-    LOG("request %s processed; finished at %s elapsed seconds=%fs\n",
-        requestId.c_str(), std::ctime(&end_time), elapsed_seconds.count());
+    auto end = time_point_cast<milliseconds>(system_clock::now());
+    auto end_from_epoch = end.time_since_epoch().count();
+    reply->set_executiontimeinms(end_from_epoch - start_from_epoch);
+    LOG("request %s processed; finished after %ld ms\n",
+        requestId.c_str(), end_from_epoch - start_from_epoch);
     if (dir_to_delete != "") {
         std::string rm_cmd = "rm -rf ";
         rm_cmd.append(dir_to_delete);
@@ -344,9 +343,8 @@ Status DafnyVerifierServiceImpl::Verify(ServerContext *context,
     sem_wait(&countSem);
     std::string codePath;
     string requestId;
-    auto start = std::chrono::system_clock::now();
-    std::time_t start_time = std::chrono::system_clock::to_time_t(start);
-    reply->set_starttime(start_time);
+    auto start = time_point_cast<milliseconds>(system_clock::now());
+    auto start_from_epoch = start.time_since_epoch().count();
     if (request->code() != "" && request->path() == "") {
         if (verbose) {
             std::istringstream f(request->code());
@@ -433,11 +431,10 @@ Status DafnyVerifierServiceImpl::Verify(ServerContext *context,
     close(pipefd[0]);
     close(pipefd[1]);
     sem_post(&countSem);
-    auto end = std::chrono::system_clock::now();
-    std::chrono::duration<float> elapsed_seconds = end - start;
-    reply->set_executiontime(elapsed_seconds.count());
-    std::time_t end_time = std::chrono::system_clock::to_time_t(end);
-    LOG("request %s processed; finished at %s elapsed seconds=%fs\n",
-        requestId.c_str(), std::ctime(&end_time), elapsed_seconds.count());
+    auto end = time_point_cast<milliseconds>(system_clock::now());
+    auto end_from_epoch = end.time_since_epoch().count();
+    reply->set_executiontimeinms(end_from_epoch - start_from_epoch);
+    LOG("request %s processed; finished after %ld ms\n",
+        requestId.c_str(), end_from_epoch - start_from_epoch);
     return Status::OK;
 }
