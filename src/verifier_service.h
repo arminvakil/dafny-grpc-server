@@ -54,6 +54,10 @@ public:
     Status DuplicateFolder(ServerContext *context,
                   const TmpFolder *request,
                   TmpFolder *reply) override;
+
+    Status WriteToRemoteFile(ServerContext *context,
+                   const VerificationRequest *request,
+                   Empty *reply) override;
 };
 
 #endif /* _VERIFIER_SERVICE_H_ */

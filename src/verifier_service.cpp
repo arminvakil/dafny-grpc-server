@@ -177,6 +177,23 @@ Status WriteToFile(const VerificationRequest *request)
     return Status::OK;
 }
 
+Status DafnyVerifierServiceImpl::WriteToRemoteFile(ServerContext *context,
+                   const VerificationRequest *request,
+                   Empty *reply)
+{
+    FILE *file = fopen(request->path().c_str(), "w");
+    if (file == NULL)
+    {
+        std::string msg = "Error opening file ";
+        msg.append(request->path());
+        perror(msg.c_str());
+        return Status::CANCELLED;
+    }
+    fputs(request->code().c_str(), file);
+    fclose(file);
+    return Status::OK;
+}
+
 Status DafnyVerifierServiceImpl::CloneAndVerify(ServerContext *context,
                                                 const CloneAndVerifyRequest *request,
                                                 VerificationResponse *reply)
