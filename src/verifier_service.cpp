@@ -286,15 +286,21 @@ Status DafnyVerifierServiceImpl::CloneAndVerify(ServerContext *context,
             perror("dup2 failed on pipefd[1]");
             exit(0);
         }
-        char **argv = new char *[request->arguments().size() + 3];
-        argv[0] = strdup(dafnyBinaryPath.c_str());
-        argv[1] = strdup(codePath.c_str());
+        char **argv = new char *[request->arguments().size() + 5];
+        argv[0] = strdup("timeout");
+        if (request->timeout() != "") {
+            argv[1] = strdup(request->timeout().c_str());
+        } else {
+            argv[1] = strdup("0");
+        }
+        argv[2] = strdup(dafnyBinaryPath.c_str());
+        argv[3] = strdup(codePath.c_str());
         for (int i = 0; i < request->arguments().size(); i++)
         {
-            argv[i + 2] = strdup(request->arguments(i).c_str());
+            argv[i + 4] = strdup(request->arguments(i).c_str());
         }
-        argv[request->arguments().size() + 2] = NULL;
-        execvp(dafnyBinaryPath.c_str(), argv);
+        argv[request->arguments().size() + 4] = NULL;
+        execvp("timeout", argv);
         exit(0);
     }
     int stat;
@@ -396,15 +402,21 @@ Status DafnyVerifierServiceImpl::Verify(ServerContext *context,
             perror("dup2 failed on pipefd[1]");
             exit(0);
         }
-        char **argv = new char *[request->arguments().size() + 3];
-        argv[0] = strdup(dafnyBinaryPath.c_str());
-        argv[1] = strdup(codePath.c_str());
+        char **argv = new char *[request->arguments().size() + 5];
+        argv[0] = strdup("timeout");
+        if (request->timeout() != "") {
+            argv[1] = strdup(request->timeout().c_str());
+        } else {
+            argv[1] = strdup("0");
+        }
+        argv[2] = strdup(dafnyBinaryPath.c_str());
+        argv[3] = strdup(codePath.c_str());
         for (int i = 0; i < request->arguments().size(); i++)
         {
-            argv[i + 2] = strdup(request->arguments(i).c_str());
+            argv[i + 4] = strdup(request->arguments(i).c_str());
         }
-        argv[request->arguments().size() + 2] = NULL;
-        execvp(dafnyBinaryPath.c_str(), argv);
+        argv[request->arguments().size() + 4] = NULL;
+        execvp("timeout", argv);
         exit(0);
     }
     int stat;
