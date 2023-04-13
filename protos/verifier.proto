@@ -42,6 +42,8 @@ message TmpFolder {
   // Path to the temporary folder
   string path = 1;
   string modifyingFile = 2;
+  // changes the owner of the created directory (if specified)
+  string owner = 3;
 }
 
 // Three modes:

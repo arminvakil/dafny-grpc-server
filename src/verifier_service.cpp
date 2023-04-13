@@ -98,6 +98,13 @@ Status DafnyVerifierServiceImpl::DuplicateFolder(ServerContext *context,
     copy_cmd.append("/* ");
     copy_cmd.append(tmp_dir);
     system(copy_cmd.c_str());
+    if (request->owner() != "") {
+        std::string chown_cmd = "sudo chown -R ";
+        chown_cmd.append(request->owner());
+        chown_cmd.append(" ");
+        chown_cmd.append(tmp_dir);
+        system(chown_cmd.c_str());
+    }
     std::string removing_file_path = tmp_dir;
     removing_file_path.append("/");
     removing_file_path.append(request->modifyingfile());
