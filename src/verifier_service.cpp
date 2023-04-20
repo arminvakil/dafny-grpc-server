@@ -105,19 +105,21 @@ Status DafnyVerifierServiceImpl::DuplicateFolder(ServerContext *context,
         chown_cmd.append(tmp_dir);
         system(chown_cmd.c_str());
     }
-    std::string removing_file_path = tmp_dir;
-    removing_file_path.append("/");
-    removing_file_path.append(request->modifyingfile());
-    // std::cerr << "removing :" << removing_file_path << "\n";
-    if (stat(removing_file_path.c_str(), &info) != 0) {
-        std::string msg("Removing file path does not exists! removing_file_path = ");
-        msg.append(removing_file_path);
-        return Status(StatusCode::INVALID_ARGUMENT, msg);
-    }
-    else {
-        std::string rm_cmd = "rm ";
-        rm_cmd.append(removing_file_path);
-        system(rm_cmd.c_str());
+    if (request->modifyingfile() != "") {
+        std::string removing_file_path = tmp_dir;
+        removing_file_path.append("/");
+        removing_file_path.append(request->modifyingfile());
+        // std::cerr << "removing :" << removing_file_path << "\n";
+        if (stat(removing_file_path.c_str(), &info) != 0) {
+            std::string msg("Removing file path does not exists! removing_file_path = ");
+            msg.append(removing_file_path);
+            return Status(StatusCode::INVALID_ARGUMENT, msg);
+        }
+        else {
+            std::string rm_cmd = "rm ";
+            rm_cmd.append(removing_file_path);
+            system(rm_cmd.c_str());
+        }
     }
     reply->set_path(tmp_dir);
     return Status::OK;
@@ -330,10 +332,10 @@ Status DafnyVerifierServiceImpl::CloneAndVerify(ServerContext *context,
     int stat;
     LOG("request %s issued, waiting for response\n", requestId.c_str());
     waitpid(pid, &stat, 0);
-    // if (stat != 0) {
-    //     std::cerr << "dafny failed " << std::strerror(errno) << "\n";
-    //     return Status::CANCELLED;
-    // }
+    if (stat != 0) {
+        std::cerr << "dafny failed " << std::strerror(errno) << "\n";
+        return Status::CANCELLED;
+    }
     LOG("request %s dafny finished executing\n", requestId.c_str());
 
     char buffer[BUFFER_SIZE];
