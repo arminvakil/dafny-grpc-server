@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <future>
 
 #include <grpc++/grpc++.h>
 
@@ -125,21 +126,6 @@ Status DafnyVerifierServiceImpl::DuplicateFolder(ServerContext *context,
     return Status::OK;
 }
 
-std::string DafnyVerifierServiceImpl::WriteToTmpFile(const CloneAndVerifyRequest *request)
-{
-    std::string tmpFileName = std::tmpnam(nullptr);
-    tmpFileName.append(".dfy");
-    FILE *file = fopen(tmpFileName.c_str(), "w");
-    if (file == NULL)
-    {
-        perror("Error opening temporary file");
-        return "";
-    }
-    fputs(request->code().c_str(), file);
-    fclose(file);
-    return tmpFileName;
-}
-
 std::string DafnyVerifierServiceImpl::WriteToTmpFile(const VerificationRequest *request)
 {
     std::string tmpFileName = std::tmpnam(nullptr);
@@ -154,21 +140,6 @@ std::string DafnyVerifierServiceImpl::WriteToTmpFile(const VerificationRequest *
     fputs(request->code().c_str(), file);
     fclose(file);
     return tmpFileName;
-}
-
-Status WriteToFile(const CloneAndVerifyRequest *request)
-{
-    FILE *file = fopen(request->modifyingfile().c_str(), "w");
-    if (file == NULL)
-    {
-        std::string msg = "Error opening file ";
-        msg.append(request->modifyingfile());
-        perror(msg.c_str());
-        return Status::CANCELLED;
-    }
-    fputs(request->code().c_str(), file);
-    fclose(file);
-    return Status::OK;
 }
 
 Status WriteToFile(const VerificationRequest *request)
@@ -205,12 +176,8 @@ Status DafnyVerifierServiceImpl::WriteToRemoteFile(ServerContext *context,
 
 Status DafnyVerifierServiceImpl::CloneAndVerify(ServerContext *context,
                                                 const CloneAndVerifyRequest *request,
-                                                VerificationResponse *reply)
+                                                VerificationResponseList *reply)
 {
-    int val;
-    sem_getvalue(&countSem, &val);
-    // std::cerr << "sem_value: " << val << "\n";
-    sem_wait(&countSem);
     struct stat info;
     std::string codePath;
     char *tmp_dir = NULL;
@@ -221,20 +188,18 @@ Status DafnyVerifierServiceImpl::CloneAndVerify(ServerContext *context,
 
     if (request->directorypath() != "") {
         if (stat(request->directorypath().c_str(), &info) != 0) {
-            sem_post(&countSem);
             std::string msg("Duplicating folder does not exist! directorypath = ");
             msg.append(request->directorypath());
             return Status(StatusCode::INVALID_ARGUMENT, msg);
         }
         else if (!(info.st_mode & S_IFDIR)) {
-            sem_post(&countSem);
             std::string msg("Duplicating folder is not a folder! directorypath = ");
             msg.append(request->directorypath());
             return Status(StatusCode::INVALID_ARGUMENT, msg);
             return Status::CANCELLED;
         }
         char tmplate[] = "/dev/shm/verifier_dir_XXXXXX";
-        tmp_dir = mkdtemp(tmplate);
+        tmp_dir = strdup(mkdtemp(tmplate));
         std::string copy_cmd = "cp -r ";
         copy_cmd.append(request->directorypath());
         copy_cmd.append("/* ");
@@ -243,56 +208,76 @@ Status DafnyVerifierServiceImpl::CloneAndVerify(ServerContext *context,
         system(copy_cmd.c_str());
         codePath = tmp_dir;
         codePath += "/" + request->modifyingfile();
+        requestId = request->directorypath();
+        requestId.append(&(tmp_dir[9]));
+        requestId.push_back('_');
     }
     else {
-        if (request->code() != "" && request->modifyingfile() == "") {
-            if (verbose) {
-                std::istringstream f(request->code());
-                std::getline(f, requestId);
-                LOG("request %s received\n", requestId.c_str());
-            }
-            codePath = WriteToTmpFile(request);
-            dir_to_delete = codePath;
-        }
-        else {
-            if (request->code() == "" && request->modifyingfile() == "") {
-                std::string msg("Neither code nor path is given");
-                return Status(StatusCode::INVALID_ARGUMENT, msg);
-            }
-            else if (request->code() == "") {
-                if (verbose) {
-                    requestId = request->modifyingfile();
-                    LOG("request %s received\n", requestId.c_str());
-                }
-                codePath = request->modifyingfile();
-            }
-            else {
-                if (verbose) {
-                    requestId = request->modifyingfile();
-                    LOG("request %s received\n", requestId.c_str());
-                }
-                Status status = WriteToFile(request);
-                if (!status.ok()) {
-                    return status;
-                }
-                codePath = request->modifyingfile();
-            }
-        }
+        // sem_post(&countSem);
+        std::string msg("Duplicating folder not given! directorypath == \"\"");
+        return Status(StatusCode::INVALID_ARGUMENT, msg);
     }
 
-    FILE *file = fopen(codePath.c_str(), "w");
-    if (file == NULL)
-    {
-        sem_post(&countSem);
-        std::string msg = "Error opening file ";
-        msg.append(codePath);
-        perror(msg.c_str());
+    if (request->modifyingfile() != "") {
+        FILE *file = fopen(codePath.c_str(), "w");
+        if (file == NULL)
+        {
+            // sem_post(&countSem);
+            std::string msg = "Error opening file ";
+            msg.append(codePath);
+            perror(msg.c_str());
         
-        return Status::CANCELLED;
+            return Status::CANCELLED;
+        }
+        fputs(request->code().c_str(), file);
+        fclose(file);
     }
-    fputs(request->code().c_str(), file);
-    fclose(file);
 
+    for (int i = 0; i < request->requestslist_size(); i++) {
+        reply->add_responselist();
+    }
+
+    std::vector<std::future<grpc::Status>> results;
+    for (int i = 0; i < request->requestslist_size(); i++) {
+        string reqId = requestId;
+        reqId.append(std::to_string(i));
+
+        string filePath = tmp_dir;
+        filePath.append("/");
+        filePath.append(request->requestslist(i).path());
+        results.push_back(
+            std::async(std::launch::async, &DafnyVerifierServiceImpl::VerifySingleRequest, this,
+                reqId, filePath, &(request->requestslist(i)), reply->mutable_responselist(i))
+            );
+    }
+
+    for(int i = 0; i < request->requestslist_size(); i++) {
+        results[i].wait();
+        if (!results[i].get().ok()) {
+            return results[i].get();
+        }
+    }
+
+    auto end = time_point_cast<milliseconds>(system_clock::now());
+    auto end_from_epoch = end.time_since_epoch().count();
+    reply->set_executiontimeinms(end_from_epoch - start_from_epoch);
+    LOG("request %s processed; finished after %ld ms\n",
+        requestId.c_str(), end_from_epoch - start_from_epoch);
+    if (dir_to_delete != "") {
+        std::string rm_cmd = "rm -rf ";
+        rm_cmd.append(dir_to_delete);
+        system(rm_cmd.c_str());
+    }
+    return Status::OK;
+}
+
+Status DafnyVerifierServiceImpl::VerifySingleRequest(
+    string requestId,
+    string codePath,
+    const VerificationRequest *request,
+    VerificationResponse *reply)
+{
+    sem_wait(&countSem);
     int pipefd[2]; // Used for pipe between this process and its child
     if (pipe(pipefd) == -1)
     {
@@ -352,19 +337,7 @@ Status DafnyVerifierServiceImpl::CloneAndVerify(ServerContext *context,
     reply->set_filename(codePath);
     close(pipefd[0]);
     close(pipefd[1]);
-    sem_getvalue(&countSem, &val);
-    // std::cerr << "sem_value at exit: " << val << "\n";
     sem_post(&countSem);
-    auto end = time_point_cast<milliseconds>(system_clock::now());
-    auto end_from_epoch = end.time_since_epoch().count();
-    reply->set_executiontimeinms(end_from_epoch - start_from_epoch);
-    LOG("request %s processed; finished after %ld ms\n",
-        requestId.c_str(), end_from_epoch - start_from_epoch);
-    if (dir_to_delete != "") {
-        std::string rm_cmd = "rm -rf ";
-        rm_cmd.append(dir_to_delete);
-        system(rm_cmd.c_str());
-    }
     return Status::OK;
 }
 
@@ -372,7 +345,7 @@ Status DafnyVerifierServiceImpl::Verify(ServerContext *context,
                                         const VerificationRequest *request,
                                         VerificationResponse *reply)
 {
-    sem_wait(&countSem);
+    // sem_wait(&countSem);
     std::string codePath;
     string requestId;
     auto start = time_point_cast<milliseconds>(system_clock::now());
@@ -410,69 +383,11 @@ Status DafnyVerifierServiceImpl::Verify(ServerContext *context,
         }
     }
 
-    int pipefd[2]; // Used for pipe between this process and its child
-    if (pipe(pipefd) == -1)
-    {
-        perror("Creating pipe failed");
-        return Status::CANCELLED;
-    }
-
-    int pid = fork();
-    if (pid == 0)
-    {
-        // child process
-        close(pipefd[0]);
-        int ret = dup2(pipefd[1], STDOUT_FILENO);
-        if (ret == -1)
-        {
-            perror("dup2 failed on pipefd[1]");
-            exit(0);
-        }
-        char **argv = new char *[request->arguments().size() + 5];
-        argv[0] = strdup("timeout");
-        if (request->timeout() != "") {
-            argv[1] = strdup(request->timeout().c_str());
-        } else {
-            argv[1] = strdup("0");
-        }
-        argv[2] = strdup(dafnyBinaryPath.c_str());
-        argv[3] = strdup(codePath.c_str());
-        for (int i = 0; i < request->arguments().size(); i++)
-        {
-            argv[i + 4] = strdup(request->arguments(i).c_str());
-        }
-        argv[request->arguments().size() + 4] = NULL;
-        execvp("timeout", argv);
-        exit(0);
-    }
-    int stat;
-    LOG("request %s issued, waiting for response\n", requestId.c_str());
-    waitpid(pid, &stat, 0);
-    // if (stat != 0) {
-    //     std::cerr << "dafny failed " << std::strerror(errno) << "\n";
-    //     return Status::CANCELLED;
-    // }
-    LOG("request %s dafny finished executing\n", requestId.c_str());
-
-    char buffer[BUFFER_SIZE];
-    string dafnyOutput = "";
-    int len;
-    do
-    {
-        len = read(pipefd[0], buffer, BUFFER_SIZE);
-        LOG("request %s len=%d\n", requestId.c_str(), len);
-        dafnyOutput.append(buffer, len);
-    } while (len == BUFFER_SIZE);
-    LOG("request %s response: %s\n", requestId.c_str(), dafnyOutput.c_str());
-    reply->set_response(dafnyOutput);
-    reply->set_filename(codePath);
-    close(pipefd[0]);
-    close(pipefd[1]);
-    sem_post(&countSem);
+    Status ret_status = VerifySingleRequest(requestId, codePath, request, reply);
     auto end = time_point_cast<milliseconds>(system_clock::now());
     auto end_from_epoch = end.time_since_epoch().count();
     reply->set_executiontimeinms(end_from_epoch - start_from_epoch);
     LOG("request %s processed; finished after %ld ms\n",
         requestId.c_str(), end_from_epoch - start_from_epoch);
-    return Status::OK;
+    return ret_status;
 }
