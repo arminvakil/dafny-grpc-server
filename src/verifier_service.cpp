@@ -157,6 +157,21 @@ Status WriteToFile(const VerificationRequest *request)
     return Status::OK;
 }
 
+Status WriteToFile(const string &path, const string &code)
+{
+    FILE *file = fopen(path.c_str(), "w");
+    if (file == NULL)
+    {
+        std::string msg = "Error opening file ";
+        msg.append(path);
+        perror(msg.c_str());
+        return Status::CANCELLED;
+    }
+    fputs(code.c_str(), file);
+    fclose(file);
+    return Status::OK;
+}
+
 Status DafnyVerifierServiceImpl::WriteToRemoteFile(ServerContext *context,
                    const VerificationRequest *request,
                    Empty *reply)
@@ -277,6 +292,12 @@ Status DafnyVerifierServiceImpl::VerifySingleRequest(
     const VerificationRequest *request,
     VerificationResponse *reply)
 {
+    if (request->code() != "") {
+        Status status = WriteToFile(codePath, request->code());
+        if (!status.ok()) {
+            return status;
+        }
+    }
     sem_wait(&countSem);
     int pipefd[2]; // Used for pipe between this process and its child
     if (pipe(pipefd) == -1)
