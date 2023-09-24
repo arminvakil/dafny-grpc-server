@@ -26,16 +26,27 @@ class DafnyVerifierServiceImpl : public DafnyVerifierService::Service
 {
     int numWorkers;
     sem_t countSem;
+    sem_t waitingOnGlobalMutexSem;
     std::string dafnyBinaryPath;
     pthread_mutex_t logFileLock;
+    pthread_mutex_t globalLock;
+    pthread_mutex_t coreListLock;
     FILE* logFile;
     std::string WriteToTmpFile(const VerificationRequest *request);
+    std::queue<int> coreList;
 public:
     DafnyVerifierServiceImpl(int num_workers, std::string dafny_binary_path);
     virtual ~DafnyVerifierServiceImpl() {}
 
+    void LockGlobalMutex();
+    void UnlockGlobalMutex();
+
+    int AcquireCountSem(bool globalLockAlreadyAcquired);
+    void ReleaseCountSem(int coreId);
+
     Status VerifySingleRequest(std::string requestId,
                                std::string codePath,
+                               bool globalLockAlreadyAcquired,
                                const VerificationRequest *request,
                                VerificationResponse *reply);
 
@@ -46,6 +57,10 @@ public:
     Status CloneAndVerify(ServerContext *context,
                   const CloneAndVerifyRequest *request,
                   VerificationResponseList *reply) override;
+
+    Status TwoStageVerify(ServerContext *context,
+                          const TwoStageRequest *request,
+                          VerificationResponseList *reply) override;
 
     Status CreateTmpFolder(ServerContext *context,
                   const CreateDir *request,

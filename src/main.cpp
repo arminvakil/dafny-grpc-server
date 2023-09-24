@@ -62,7 +62,9 @@ int main(int argc, char **argv)
         exit(-1);
     }
 
-    verifier_service = new DafnyVerifierServiceImpl(40, dafnyBinaryPath);
+    const auto processor_count = std::thread::hardware_concurrency();
+    std::cerr << processor_count << "\n";
+    verifier_service = new DafnyVerifierServiceImpl(processor_count, dafnyBinaryPath);
 
     ServerBuilder builder;
     builder.AddListeningPort(ipPort, grpc::InsecureServerCredentials());

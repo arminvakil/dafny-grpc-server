@@ -31,9 +31,57 @@ using grpc::StatusCode;
 DafnyVerifierServiceImpl::DafnyVerifierServiceImpl(int num_workers, string dafny_binary_path) : numWorkers(num_workers), dafnyBinaryPath(dafny_binary_path)
 {
     sem_init(&countSem, 1, numWorkers);
+    sem_init(&waitingOnGlobalMutexSem, 1, 0);
     pthread_mutex_init(&logFileLock, 0);
+    pthread_mutex_init(&globalLock, 0);
+    pthread_mutex_init(&coreListLock, 0);
+    for (int i = 0; i < numWorkers; i++) {
+        coreList.push(i);
+    }
     logFile = fopen("/tmp/log.txt", "w");
     fclose(logFile);
+}
+
+int DafnyVerifierServiceImpl::AcquireCountSem(bool globalLockAlreadyAcquired) {
+    if (!globalLockAlreadyAcquired) {
+        int waitingOnGlobalMutexSemValue;
+        sem_getvalue(&waitingOnGlobalMutexSem, &waitingOnGlobalMutexSemValue);
+        // if a request is waiting on global sem, we should wait here
+        while (waitingOnGlobalMutexSemValue != 0) {
+            usleep(1000);
+            sem_getvalue(&waitingOnGlobalMutexSem, &waitingOnGlobalMutexSemValue);
+        }
+    }
+    sem_wait(&countSem);
+    pthread_mutex_lock(&coreListLock);
+    int coreId = coreList.front();
+    coreList.pop();
+    pthread_mutex_unlock(&coreListLock);
+    return coreId;
+}
+
+void DafnyVerifierServiceImpl::ReleaseCountSem(int coreId) {
+    pthread_mutex_lock(&coreListLock);
+    coreList.push(coreId);
+    pthread_mutex_unlock(&coreListLock);
+    sem_post(&countSem);
+}
+
+void DafnyVerifierServiceImpl::LockGlobalMutex() {
+    sem_post(&waitingOnGlobalMutexSem);
+    int countSemValue;
+    sem_getvalue(&countSem, &countSemValue);
+    // wait until all singleton threads are finished
+    while (countSemValue != numWorkers) {
+        usleep(1000);
+        sem_getvalue(&countSem, &countSemValue);
+    }
+    pthread_mutex_lock(&globalLock);
+    sem_wait(&waitingOnGlobalMutexSem);
+}
+
+void DafnyVerifierServiceImpl::UnlockGlobalMutex() {
+    pthread_mutex_unlock(&globalLock);
 }
 
 Status DafnyVerifierServiceImpl::CreateTmpFolder(ServerContext *context,
@@ -262,7 +310,7 @@ Status DafnyVerifierServiceImpl::CloneAndVerify(ServerContext *context,
         filePath.append(request->requestslist(i).path());
         results.push_back(
             std::async(std::launch::async, &DafnyVerifierServiceImpl::VerifySingleRequest, this,
-                reqId, filePath, &(request->requestslist(i)), reply->mutable_responselist(i))
+                reqId, filePath, false, &(request->requestslist(i)), reply->mutable_responselist(i))
             );
     }
 
@@ -289,6 +337,7 @@ Status DafnyVerifierServiceImpl::CloneAndVerify(ServerContext *context,
 Status DafnyVerifierServiceImpl::VerifySingleRequest(
     string requestId,
     string codePath,
+    bool globalLockAlreadyAcquired,
     const VerificationRequest *request,
     VerificationResponse *reply)
 {
@@ -298,11 +347,11 @@ Status DafnyVerifierServiceImpl::VerifySingleRequest(
             return status;
         }
     }
-    sem_wait(&countSem);
+    int coreId = AcquireCountSem(globalLockAlreadyAcquired);
     int pipefd[2]; // Used for pipe between this process and its child
     if (pipe(pipefd) == -1)
     {
-        sem_post(&countSem);
+        ReleaseCountSem(coreId);
         perror("Creating pipe failed");
         return Status::CANCELLED;
     }
@@ -318,6 +367,18 @@ Status DafnyVerifierServiceImpl::VerifySingleRequest(
             perror("dup2 failed on pipefd[1]");
             exit(0);
         }
+        cpu_set_t mask;
+        int status;
+
+        CPU_ZERO(&mask);
+        CPU_SET(coreId, &mask);
+        status = sched_setaffinity(0, sizeof(mask), &mask);
+        if (status != 0)
+        {
+            perror("sched_setaffinity");
+            exit(0);
+        }
+
         char **argv = new char *[request->arguments().size() + 5];
         argv[0] = strdup("timeout");
         if (request->timeout() != "") {
@@ -338,10 +399,11 @@ Status DafnyVerifierServiceImpl::VerifySingleRequest(
     int stat;
     LOG("request %s issued, waiting for response\n", requestId.c_str());
     waitpid(pid, &stat, 0);
-    if (stat != 0) {
-        std::cerr << "dafny failed " << std::strerror(errno) << "\n";
-        return Status::CANCELLED;
-    }
+    // if (stat != 0) {
+    //     std::cerr << "dafny failed for filepath=" << codePath << " with error: " << std::strerror(errno) << "\n";
+    //     sem_post(&countSem);
+    //     return Status::CANCELLED;
+    // }
     LOG("request %s dafny finished executing\n", requestId.c_str());
 
     char buffer[BUFFER_SIZE];
@@ -358,7 +420,119 @@ Status DafnyVerifierServiceImpl::VerifySingleRequest(
     reply->set_filename(codePath);
     close(pipefd[0]);
     close(pipefd[1]);
-    sem_post(&countSem);
+    ReleaseCountSem(coreId);
+    // sem_post(&countSem);
+    return Status::OK;
+}
+
+Status DafnyVerifierServiceImpl::TwoStageVerify(ServerContext *context,
+                                                const TwoStageRequest *request,
+                                                VerificationResponseList *reply)
+{
+    struct stat info;
+    std::string codePath;
+    char *tmp_dir = NULL;
+    std::string dir_to_delete = "";
+    string requestId;
+    auto start = time_point_cast<milliseconds>(system_clock::now());
+    auto start_from_epoch = start.time_since_epoch().count();
+
+    if (request->directorypath() != "") {
+        if (stat(request->directorypath().c_str(), &info) != 0) {
+            std::string msg("Duplicating folder does not exist! directorypath = ");
+            msg.append(request->directorypath());
+            return Status(StatusCode::INVALID_ARGUMENT, msg);
+        }
+        else if (!(info.st_mode & S_IFDIR)) {
+            std::string msg("Duplicating folder is not a folder! directorypath = ");
+            msg.append(request->directorypath());
+            return Status(StatusCode::INVALID_ARGUMENT, msg);
+            return Status::CANCELLED;
+        }
+        char tmplate[] = "/dev/shm/verifier_dir_XXXXXX";
+        tmp_dir = strdup(mkdtemp(tmplate));
+        std::string copy_cmd = "cp -r ";
+        copy_cmd.append(request->directorypath());
+        copy_cmd.append("/* ");
+        copy_cmd.append(tmp_dir);
+        dir_to_delete.append(tmp_dir);
+        system(copy_cmd.c_str());
+        codePath = tmp_dir;
+        codePath += "/";
+        requestId = request->directorypath();
+        requestId.append(&(tmp_dir[9]));
+        requestId.push_back('_');
+    }
+    else {
+        // sem_post(&countSem);
+        std::string msg("Duplicating folder not given! directorypath == \"\"");
+        return Status(StatusCode::INVALID_ARGUMENT, msg);
+    }
+
+    for (int i = 0; i < request->firststagerequestslist_size(); i++) {
+        string path = codePath;
+        path += request->firststagerequestslist(i).path();
+        FILE *file = fopen(path.c_str(), "w");
+        if (file == NULL)
+        {
+            // sem_post(&countSem);
+            std::string msg = "Error opening file ";
+            msg.append(path);
+            perror(msg.c_str());
+        
+            return Status::CANCELLED;
+        }
+        // std::cerr << "Writing to " << path << "\n";
+        fputs(request->firststagerequestslist(i).code().c_str(), file);
+        fclose(file);
+    }
+
+    for (int i = 0; i < request->secondstagerequestslist_size(); i++) {
+        reply->add_responselist();
+    }
+
+    if (request->runexclusive()) {
+        LockGlobalMutex();
+    }
+
+    std::vector<std::future<grpc::Status>> results;
+    for (int i = 0; i < request->secondstagerequestslist_size(); i++) {
+        string reqId = requestId;
+        reqId.append(std::to_string(i));
+
+        string filePath = codePath;
+        filePath.append(request->secondstagerequestslist(i).path());
+        results.push_back(
+            std::async(std::launch::async, &DafnyVerifierServiceImpl::VerifySingleRequest, this,
+                reqId, filePath, request->runexclusive(), 
+                &(request->secondstagerequestslist(i)), reply->mutable_responselist(i))
+            );
+    }
+
+    for(int i = 0; i < request->secondstagerequestslist_size(); i++) {
+        results[i].wait();
+    }
+    // std::cerr << "got all responses\n";
+    for(int i = 0; i < request->secondstagerequestslist_size(); i++) {
+        if (!results[i].get().ok()) {
+            // std::cerr << i << "th response not okay" << results[i].get().error_message() << "\n";
+            return results[i].get();
+        }
+    }
+
+    if (request->runexclusive()) {
+        UnlockGlobalMutex();
+    }
+    auto end = time_point_cast<milliseconds>(system_clock::now());
+    auto end_from_epoch = end.time_since_epoch().count();
+    reply->set_executiontimeinms(end_from_epoch - start_from_epoch);
+    LOG("request %s processed; finished after %ld ms\n",
+        requestId.c_str(), end_from_epoch - start_from_epoch);
+    if (dir_to_delete != "") {
+        std::string rm_cmd = "rm -rf ";
+        rm_cmd.append(dir_to_delete);
+        system(rm_cmd.c_str());
+    }
     return Status::OK;
 }
 
@@ -404,7 +578,7 @@ Status DafnyVerifierServiceImpl::Verify(ServerContext *context,
         }
     }
 
-    Status ret_status = VerifySingleRequest(requestId, codePath, request, reply);
+    Status ret_status = VerifySingleRequest(requestId, codePath, false, request, reply);
     auto end = time_point_cast<milliseconds>(system_clock::now());
     auto end_from_epoch = end.time_since_epoch().count();
     reply->set_executiontimeinms(end_from_epoch - start_from_epoch);
