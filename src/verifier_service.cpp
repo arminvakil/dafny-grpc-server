@@ -434,8 +434,6 @@ Status DafnyVerifierServiceImpl::TwoStageVerify(ServerContext *context,
     char *tmp_dir = NULL;
     std::string dir_to_delete = "";
     string requestId;
-    auto start = time_point_cast<milliseconds>(system_clock::now());
-    auto start_from_epoch = start.time_since_epoch().count();
 
     if (request->directorypath() != "") {
         if (stat(request->directorypath().c_str(), &info) != 0) {
@@ -494,6 +492,8 @@ Status DafnyVerifierServiceImpl::TwoStageVerify(ServerContext *context,
     if (request->runexclusive()) {
         LockGlobalMutex();
     }
+    auto start = time_point_cast<milliseconds>(system_clock::now());
+    auto start_from_epoch = start.time_since_epoch().count();
 
     std::vector<std::future<grpc::Status>> results;
     for (int i = 0; i < request->secondstagerequestslist_size(); i++) {
@@ -520,11 +520,11 @@ Status DafnyVerifierServiceImpl::TwoStageVerify(ServerContext *context,
         }
     }
 
+    auto end = time_point_cast<milliseconds>(system_clock::now());
+    auto end_from_epoch = end.time_since_epoch().count();
     if (request->runexclusive()) {
         UnlockGlobalMutex();
     }
-    auto end = time_point_cast<milliseconds>(system_clock::now());
-    auto end_from_epoch = end.time_since_epoch().count();
     reply->set_executiontimeinms(end_from_epoch - start_from_epoch);
     LOG("request %s processed; finished after %ld ms\n",
         requestId.c_str(), end_from_epoch - start_from_epoch);
