@@ -355,7 +355,9 @@ Status DafnyVerifierServiceImpl::VerifySingleRequest(
         perror("Creating pipe failed");
         return Status::CANCELLED;
     }
+    fcntl(pipefd[1], F_SETPIPE_SZ, 1048576);
 
+    LOG("request %s codePath=%s issued, waiting for response\n", requestId.c_str(), codePath.c_str());
     int pid = fork();
     if (pid == 0)
     {
@@ -379,25 +381,29 @@ Status DafnyVerifierServiceImpl::VerifySingleRequest(
             exit(0);
         }
 
-        char **argv = new char *[request->arguments().size() + 5];
+        char **argv = new char *[request->arguments().size() + 6];
         argv[0] = strdup("timeout");
+        argv[1] = strdup("--preserve-status");
+        argv[2] = strdup("-k");
+        argv[3] = strdup("5");
         if (request->timeout() != "") {
-            argv[1] = strdup(request->timeout().c_str());
+            argv[4] = strdup(request->timeout().c_str());
         } else {
-            argv[1] = strdup("0");
+            argv[4] = strdup("0");
         }
-        argv[2] = strdup(dafnyBinaryPath.c_str());
-        argv[3] = strdup(codePath.c_str());
+        argv[5] = strdup(dafnyBinaryPath.c_str());
+        argv[6] = strdup(codePath.c_str());
         for (int i = 0; i < request->arguments().size(); i++)
         {
-            argv[i + 4] = strdup(request->arguments(i).c_str());
+            argv[i + 7] = strdup(request->arguments(i).c_str());
         }
-        argv[request->arguments().size() + 4] = NULL;
+        argv[request->arguments().size() + 7] = NULL;
         execvp("timeout", argv);
+        fflush(stdout);
         exit(0);
     }
+    close(pipefd[1]);
     int stat;
-    LOG("request %s issued, waiting for response\n", requestId.c_str());
     waitpid(pid, &stat, 0);
     // if (stat != 0) {
     //     std::cerr << "dafny failed for filepath=" << codePath << " with error: " << std::strerror(errno) << "\n";
@@ -419,7 +425,6 @@ Status DafnyVerifierServiceImpl::VerifySingleRequest(
     reply->set_response(dafnyOutput);
     reply->set_filename(codePath);
     close(pipefd[0]);
-    close(pipefd[1]);
     ReleaseCountSem(coreId);
     // sem_post(&countSem);
     return Status::OK;
@@ -513,10 +518,12 @@ Status DafnyVerifierServiceImpl::TwoStageVerify(ServerContext *context,
         results[i].wait();
     }
     // std::cerr << "got all responses\n";
+    Status ret_status = Status::OK;
     for(int i = 0; i < request->secondstagerequestslist_size(); i++) {
         if (!results[i].get().ok()) {
             // std::cerr << i << "th response not okay" << results[i].get().error_message() << "\n";
-            return results[i].get();
+            ret_status = results[i].get();
+            break;
         }
     }
 
@@ -533,7 +540,7 @@ Status DafnyVerifierServiceImpl::TwoStageVerify(ServerContext *context,
         rm_cmd.append(dir_to_delete);
         system(rm_cmd.c_str());
     }
-    return Status::OK;
+    return ret_status;
 }
 
 Status DafnyVerifierServiceImpl::Verify(ServerContext *context,
