@@ -381,7 +381,7 @@ Status DafnyVerifierServiceImpl::VerifySingleRequest(
             exit(0);
         }
 
-        char **argv = new char *[request->arguments().size() + 6];
+        char **argv = new char *[request->arguments().size() + 8];
         argv[0] = strdup("timeout");
         argv[1] = strdup("--preserve-status");
         argv[2] = strdup("-k");
