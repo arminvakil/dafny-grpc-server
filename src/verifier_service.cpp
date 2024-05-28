@@ -348,6 +348,13 @@ Status DafnyVerifierServiceImpl::VerifySingleRequest(
         }
     }
     int coreId = AcquireCountSem(globalLockAlreadyAcquired);
+    string timeLimitStr;
+    if (request->timeout() != "") {
+        timeLimitStr = request->timeout();
+    }
+    else {
+        timeLimitStr = "0";
+    }
     int pipefd[2]; // Used for pipe between this process and its child
     if (pipe(pipefd) == -1)
     {
@@ -357,7 +364,7 @@ Status DafnyVerifierServiceImpl::VerifySingleRequest(
     }
     fcntl(pipefd[1], F_SETPIPE_SZ, 1048576);
 
-    LOG("request %s codePath=%s issued, waiting for response\n", requestId.c_str(), codePath.c_str());
+    LOG("request %s codePath=%s issued with timeLimit = %s, waiting for response\n", requestId.c_str(), codePath.c_str(), timeLimitStr.c_str());
     int pid = fork();
     if (pid == 0)
     {
@@ -381,23 +388,16 @@ Status DafnyVerifierServiceImpl::VerifySingleRequest(
             exit(0);
         }
 
-        char **argv = new char *[request->arguments().size() + 8];
+        char **argv = new char *[request->arguments().size() + 5];
         argv[0] = strdup("timeout");
-        argv[1] = strdup("--preserve-status");
-        argv[2] = strdup("-k");
-        argv[3] = strdup("5");
-        if (request->timeout() != "") {
-            argv[4] = strdup(request->timeout().c_str());
-        } else {
-            argv[4] = strdup("0");
-        }
-        argv[5] = strdup(dafnyBinaryPath.c_str());
-        argv[6] = strdup(codePath.c_str());
+        argv[1] = strdup(timeLimitStr.c_str());
+        argv[2] = strdup(dafnyBinaryPath.c_str());
+        argv[3] = strdup(codePath.c_str());
         for (int i = 0; i < request->arguments().size(); i++)
         {
-            argv[i + 7] = strdup(request->arguments(i).c_str());
+            argv[i + 4] = strdup(request->arguments(i).c_str());
         }
-        argv[request->arguments().size() + 7] = NULL;
+        argv[request->arguments().size() + 4] = NULL;
         execvp("timeout", argv);
         fflush(stdout);
         exit(0);
@@ -405,12 +405,12 @@ Status DafnyVerifierServiceImpl::VerifySingleRequest(
     close(pipefd[1]);
     int stat;
     waitpid(pid, &stat, 0);
+    LOG("request %s dafny finished executing exit_status=%d\n", requestId.c_str(), WEXITSTATUS(stat));
     // if (stat != 0) {
     //     std::cerr << "dafny failed for filepath=" << codePath << " with error: " << std::strerror(errno) << "\n";
     //     sem_post(&countSem);
     //     return Status::CANCELLED;
     // }
-    LOG("request %s dafny finished executing\n", requestId.c_str());
 
     char buffer[BUFFER_SIZE];
     string dafnyOutput = "";
@@ -424,6 +424,7 @@ Status DafnyVerifierServiceImpl::VerifySingleRequest(
     LOG("request %s response: %s\n", requestId.c_str(), dafnyOutput.c_str());
     reply->set_response(dafnyOutput);
     reply->set_filename(codePath);
+    reply->set_exitstatus(WEXITSTATUS(stat));
     close(pipefd[0]);
     ReleaseCountSem(coreId);
     // sem_post(&countSem);

@@ -25,6 +25,11 @@ class DafnyVerifierServiceStub(object):
                 request_serializer=verifier__pb2.CloneAndVerifyRequest.SerializeToString,
                 response_deserializer=verifier__pb2.VerificationResponseList.FromString,
                 )
+        self.TwoStageVerify = channel.unary_unary(
+                '/DafnyExecutorServer.DafnyVerifierService/TwoStageVerify',
+                request_serializer=verifier__pb2.TwoStageRequest.SerializeToString,
+                response_deserializer=verifier__pb2.VerificationResponseList.FromString,
+                )
         self.CreateTmpFolder = channel.unary_unary(
                 '/DafnyExecutorServer.DafnyVerifierService/CreateTmpFolder',
                 request_serializer=verifier__pb2.CreateDir.SerializeToString,
@@ -59,6 +64,12 @@ class DafnyVerifierServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def CloneAndVerify(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def TwoStageVerify(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -99,6 +110,11 @@ def add_DafnyVerifierServiceServicer_to_server(servicer, server):
             'CloneAndVerify': grpc.unary_unary_rpc_method_handler(
                     servicer.CloneAndVerify,
                     request_deserializer=verifier__pb2.CloneAndVerifyRequest.FromString,
+                    response_serializer=verifier__pb2.VerificationResponseList.SerializeToString,
+            ),
+            'TwoStageVerify': grpc.unary_unary_rpc_method_handler(
+                    servicer.TwoStageVerify,
+                    request_deserializer=verifier__pb2.TwoStageRequest.FromString,
                     response_serializer=verifier__pb2.VerificationResponseList.SerializeToString,
             ),
             'CreateTmpFolder': grpc.unary_unary_rpc_method_handler(
@@ -162,6 +178,23 @@ class DafnyVerifierService(object):
             metadata=None):
         return grpc.experimental.unary_unary(request, target, '/DafnyExecutorServer.DafnyVerifierService/CloneAndVerify',
             verifier__pb2.CloneAndVerifyRequest.SerializeToString,
+            verifier__pb2.VerificationResponseList.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def TwoStageVerify(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/DafnyExecutorServer.DafnyVerifierService/TwoStageVerify',
+            verifier__pb2.TwoStageRequest.SerializeToString,
             verifier__pb2.VerificationResponseList.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
