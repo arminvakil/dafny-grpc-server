@@ -491,7 +491,7 @@ Status DafnyVerifierServiceImpl::TwoStageVerify(ServerContext *context,
         fclose(file);
     }
 
-    for (int i = 0; i < request->secondstagerequestslist_size(); i++) {
+    for (int i = 0; i < request->prerequisiteforsecondstagerequestslist_size(); i++) {
         reply->add_responselist();
     }
 
@@ -501,33 +501,78 @@ Status DafnyVerifierServiceImpl::TwoStageVerify(ServerContext *context,
     auto start = time_point_cast<milliseconds>(system_clock::now());
     auto start_from_epoch = start.time_since_epoch().count();
 
-    std::vector<std::future<grpc::Status>> results;
-    for (int i = 0; i < request->secondstagerequestslist_size(); i++) {
+    std::vector<std::future<grpc::Status>> prerequisite_tasks_futures;
+    std::vector<grpc::Status> prerequisite_tasks_results;
+    for (int i = 0; i < request->prerequisiteforsecondstagerequestslist_size(); i++) {
         string reqId = requestId;
         reqId.append(std::to_string(i));
 
         string filePath = codePath;
-        filePath.append(request->secondstagerequestslist(i).path());
-        results.push_back(
+        filePath.append(request->prerequisiteforsecondstagerequestslist(i).path());
+        prerequisite_tasks_futures.push_back(
             std::async(std::launch::async, &DafnyVerifierServiceImpl::VerifySingleRequest, this,
                 reqId, filePath, request->runexclusive(), 
-                &(request->secondstagerequestslist(i)), reply->mutable_responselist(i))
+                &(request->prerequisiteforsecondstagerequestslist(i)),
+                reply->mutable_responselist(i))
             );
     }
 
-    for(int i = 0; i < request->secondstagerequestslist_size(); i++) {
-        results[i].wait();
-    }
-    // std::cerr << "got all responses\n";
-    Status ret_status = Status::OK;
-    for(int i = 0; i < request->secondstagerequestslist_size(); i++) {
-        if (!results[i].get().ok()) {
-            // std::cerr << i << "th response not okay" << results[i].get().error_message() << "\n";
-            ret_status = results[i].get();
-            break;
-        }
+    for(int i = 0; i < request->prerequisiteforsecondstagerequestslist_size(); i++) {
+        prerequisite_tasks_futures[i].wait();
+        prerequisite_tasks_results.push_back(prerequisite_tasks_futures[i].get());
     }
 
+    bool prerequisite_status = true;
+    for(int i = 0; i < request->prerequisiteforsecondstagerequestslist_size(); i++) {
+        if (request->prerequisiteforsecondstagerequestslist(i).shouldpassnotfail()) {
+            if (reply->mutable_responselist(i)->exitstatus() != 0) {
+                LOG("shouldpass case: %dth response not okay\n", i);
+                prerequisite_status = false;
+                break;
+            }
+        } else {
+            if (reply->mutable_responselist(i)->exitstatus() == 0) {
+                LOG("shouldfail case: %dth response not okay\n", i);
+                prerequisite_status = false;
+                break;
+            }
+        }
+    }
+    LOG("after prerequisite tasks checks %d\n", prerequisite_status);
+    Status ret_status = Status::OK;
+    if (prerequisite_status) {
+        for (int i = 0; i < request->secondstagerequestslist_size(); i++) {
+            reply->add_responselist();
+        }
+        std::vector<std::future<grpc::Status>> futures;
+        std::vector<grpc::Status> results;
+        for (int i = 0; i < request->secondstagerequestslist_size(); i++) {
+            string reqId = requestId;
+            reqId.append(std::to_string(i + request->prerequisiteforsecondstagerequestslist_size()));
+
+            string filePath = codePath;
+            filePath.append(request->secondstagerequestslist(i).path());
+            futures.push_back(
+                std::async(std::launch::async, &DafnyVerifierServiceImpl::VerifySingleRequest, this,
+                    reqId, filePath, request->runexclusive(), 
+                    &(request->secondstagerequestslist(i)), 
+                    reply->mutable_responselist(i + request->prerequisiteforsecondstagerequestslist_size()))
+                );
+        }
+
+        for(int i = 0; i < request->secondstagerequestslist_size(); i++) {
+            futures[i].wait();
+            results.push_back(futures[i].get());
+        }
+        // std::cerr << "got all responses\n";
+        for(int i = 0; i < request->secondstagerequestslist_size(); i++) {
+            if (!results[i].ok()) {
+                // std::cerr << i << "th response not okay" << results[i].get().error_message() << "\n";
+                ret_status = results[i];
+                break;
+            }
+        }
+    }
     auto end = time_point_cast<milliseconds>(system_clock::now());
     auto end_from_epoch = end.time_since_epoch().count();
     if (request->runexclusive()) {
