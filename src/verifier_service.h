@@ -50,6 +50,13 @@ public:
                                const VerificationRequest *request,
                                VerificationResponse *reply);
 
+    Status VerifySingleRequestWithBoogieZ3Manipulation(
+        std::string requestId,
+        std::string codePath,
+        bool globalLockAlreadyAcquired,
+        const VerificationRequest *request,
+        std::string *reply);
+
     Status Verify(ServerContext *context,
                   const VerificationRequest *request,
                   VerificationResponse *reply) override;
@@ -57,6 +64,18 @@ public:
     Status CloneAndVerify(ServerContext *context,
                   const CloneAndVerifyRequest *request,
                   VerificationResponseList *reply) override;
+
+    template<class T>
+    Status SetupRequestDirectory(
+        const T *request,
+        std::string& codePath,
+        std::string& dir_to_delete,
+        std::string& requestId);
+
+    Status TwoStageVerifyWithBoogieZ3Manipulation(
+        ServerContext *context,
+        const TwoStageBoogieZ3Request *request,
+        Z3OutputList *reply) override;
 
     Status TwoStageVerify(ServerContext *context,
                           const TwoStageRequest *request,

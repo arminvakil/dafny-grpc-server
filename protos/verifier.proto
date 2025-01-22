@@ -10,6 +10,7 @@ service DafnyVerifierService {
   rpc Verify(VerificationRequest) returns (VerificationResponse) {}
   rpc CloneAndVerify(CloneAndVerifyRequest) returns (VerificationResponseList) {}
   rpc TwoStageVerify(TwoStageRequest) returns (VerificationResponseList) {}
+  rpc TwoStageVerifyWithBoogieZ3Manipulation(TwoStageBoogieZ3Request) returns (Z3OutputList) {}
   rpc CreateTmpFolder(CreateDir) returns (TmpFolder) {}
   rpc RemoveFolder(TmpFolder) returns (Empty) {}
   rpc DuplicateFolder(TmpFolder) returns (TmpFolder) {}
@@ -37,6 +38,19 @@ message CloneAndVerifyRequest {
 }
 
 message TwoStageRequest {
+  // Path to the base folder that needs to be cloned
+  string directoryPath = 1;
+  // Should run this request exclusively on the server
+  bool runExclusive = 2;
+  // List of verification requests to be run in the first stage
+  repeated VerificationRequest firstStageRequestsList = 3;
+  // List of prerequisite verification requests for the 2nd stage
+  repeated VerificationRequest prerequisiteForSecondStageRequestsList = 4;
+  // List of verification requests to be run in the second stage
+  repeated VerificationRequest secondStageRequestsList = 5;
+}
+
+message TwoStageBoogieZ3Request {
   // Path to the base folder that needs to be cloned
   string directoryPath = 1;
   // Should run this request exclusively on the server
@@ -88,6 +102,12 @@ message VerificationRequest {
 message VerificationResponseList {
   repeated VerificationResponse responseList = 1;
   uint64 executionTimeInMs = 2;
+}
+
+message Z3OutputList {
+  repeated string outputList = 1;
+  uint64 executionTimeInMs = 2;
+  string fileName = 3;
 }
 
 message VerificationResponse {

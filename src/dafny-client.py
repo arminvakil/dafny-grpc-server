@@ -70,13 +70,16 @@ def twoStageVerify(stub, base_dir):
         verification_request.arguments.append('/compile:0')
         verification_request.arguments.append('/rlimit:50000')
         # verification_request.arguments.append('/allowGlobals')
-        verification_request.arguments.append('/arith:5')
+        # verification_request.arguments.append('/arith:5')
         verification_request.arguments.append('/trace')
         verification_request.arguments.append('/noCheating:1')
+        verification_request.arguments.append('/proc:*SafetyTheoremNextPreservesInv*')
+        verification_request.arguments.append('/noPrune')
         verification_request.timeout = "20m"
-        verification_request.path = "Distributed/Protocol/SHT/RefinementProof/InvProof.i.dfy"
+        verification_request.path = "exercise01.dfy"
+        # verification_request.path = "Distributed/Protocol/SHT/RefinementProof/InvProof.i.dfy"
         request.secondStageRequestsList.append(verification_request)
-    response = stub.TwoStageVerify(request)
+    response = stub.TwoStageVerifyWithBoogieZ3Manipulation(request)
     print(f"Received response is {response}")
 
 def verify(tasksList):
@@ -98,6 +101,7 @@ def verify(tasksList):
         print(f"Received response is {response}")
 
 def run():
+    print(sys.argv[1])
     with grpc.insecure_channel(sys.argv[1]) as channel:
         stub = verifier_pb2_grpc.DafnyVerifierServiceStub(channel)
         tmp_dir = verifier_pb2.TmpFolder()
@@ -107,14 +111,14 @@ def run():
 
 
 if __name__ == '__main__':
-    if len(sys.argv) < 3:
+    if len(sys.argv) < 2:
         print (f'Usage: {sys.argv[0]} IP:PORT PATH')
         sys.exit(1)
     logging.basicConfig()
     tasksList = dafnyArgs_pb2.TasksList()
     # Read the existing address book.
-    with open(sys.argv[2], "r") as f:
-        tasksList = Parse(f.read(), tasksList)
+    # with open(sys.argv[2], "r") as f:
+    #     tasksList = Parse(f.read(), tasksList)
         # tasksList.Parse(f.read())
-    verify(tasksList)
-    # run()
+    # verify(tasksList)
+    run()
