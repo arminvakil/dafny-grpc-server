@@ -28,6 +28,7 @@ class DafnyVerifierServiceImpl : public DafnyVerifierService::Service
     sem_t countSem;
     sem_t waitingOnGlobalMutexSem;
     std::string dafnyBinaryPath;
+    std::string baseDir;
     pthread_mutex_t logFileLock;
     pthread_mutex_t globalLock;
     pthread_mutex_t coreListLock;
@@ -35,7 +36,7 @@ class DafnyVerifierServiceImpl : public DafnyVerifierService::Service
     std::string WriteToTmpFile(const VerificationRequest *request);
     std::queue<int> coreList;
 public:
-    DafnyVerifierServiceImpl(int num_workers, std::string dafny_binary_path);
+    DafnyVerifierServiceImpl(int num_workers, std::string dafny_binary_path, std::string base_dir);
     virtual ~DafnyVerifierServiceImpl() {}
 
     void LockGlobalMutex();

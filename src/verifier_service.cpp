@@ -28,7 +28,7 @@ using grpc::StatusCode;
         pthread_mutex_unlock(&logFileLock);   \
     }
 
-DafnyVerifierServiceImpl::DafnyVerifierServiceImpl(int num_workers, string dafny_binary_path) : numWorkers(num_workers), dafnyBinaryPath(dafny_binary_path)
+DafnyVerifierServiceImpl::DafnyVerifierServiceImpl(int num_workers, string dafny_binary_path, string base_dir) : numWorkers(num_workers), dafnyBinaryPath(dafny_binary_path), baseDir(base_dir)
 {
     sem_init(&countSem, 1, numWorkers);
     sem_init(&waitingOnGlobalMutexSem, 1, 0);
@@ -88,8 +88,8 @@ Status DafnyVerifierServiceImpl::CreateTmpFolder(ServerContext *context,
                                                  const CreateDir *request,
                                                  TmpFolder *reply)
 {
-    char tmplate[] = "/dev/shm/verifier_dir_XXXXXX";
-    char *tmp_dir = mkdtemp(tmplate);
+    string tmplate = baseDir + "/verifier_dir_XXXXXX";
+    char *tmp_dir = mkdtemp(tmplate.c_str());
     reply->set_path(tmp_dir);
     if (request->owner() != "") {
         std::string chown_cmd = "sudo chown -R ";

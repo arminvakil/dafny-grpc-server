@@ -24,6 +24,7 @@ using namespace DafnyExecutorServer;
 bool verbose = false;
 string ipPort = "0.0.0.0:50051";
 string dafnyBinaryPath = "";
+string baseDir = "";
 DafnyVerifierServiceImpl *verifier_service;
 
 void usage(char **argv)
@@ -36,7 +37,7 @@ int main(int argc, char **argv)
     char opt;
     int processor_count = -1;
 
-    while ((opt = getopt(argc, argv, "hvi:d:j:")) != -1)
+    while ((opt = getopt(argc, argv, "hvi:d:j:n:")) != -1)
     {
         switch (opt)
         {
@@ -55,6 +56,9 @@ int main(int argc, char **argv)
         case 'j':
             processor_count = atoi(optarg);
             break;
+        case 'n':
+            baseDir = string(optarg);
+            break;
         default:
             std::cerr << "Illegal command line option '" << opt << "'" << endl;
             usage(argv);
@@ -71,8 +75,10 @@ int main(int argc, char **argv)
         usage(argv);
         exit(-1);
     }
-
-    verifier_service = new DafnyVerifierServiceImpl(processor_count, dafnyBinaryPath);
+    if (baseDir == "") {
+        baseDir = "/dev/shm";
+    }
+    verifier_service = new DafnyVerifierServiceImpl(processor_count, dafnyBinaryPath, baseDir);
 
     ServerBuilder builder;
     builder.AddListeningPort(ipPort, grpc::InsecureServerCredentials());

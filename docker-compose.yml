@@ -14,7 +14,7 @@ services:
       placement:
         constraints:
           - node.role == worker  # Ensure gRPC servers run on worker nodes
-    command: /home/dafny-grpc-server/bazel-bin/src/server -d /home/dafny/Binaries/Dafny -j 1 -v
+    command: /home/dafny-grpc-server/bazel-bin/src/server -d /home/dafny/Binaries/Dafny -j 1 #-nfs and then the file location of a docker image that runs NFS
     ports:
       - "50051:50051"
     networks:
