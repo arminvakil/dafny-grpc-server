@@ -89,7 +89,8 @@ Status DafnyVerifierServiceImpl::CreateTmpFolder(ServerContext *context,
                                                  TmpFolder *reply)
 {
     string tmplate = baseDir + "/verifier_dir_XXXXXX";
-    char *tmp_dir = mkdtemp(tmplate.c_str());
+    char* p_tmplate = strdup(tmplate.c_str());
+    char *tmp_dir = mkdtemp(p_tmplate);
     reply->set_path(tmp_dir);
     if (request->owner() != "") {
         std::string chown_cmd = "sudo chown -R ";
@@ -98,6 +99,7 @@ Status DafnyVerifierServiceImpl::CreateTmpFolder(ServerContext *context,
         chown_cmd.append(tmp_dir);
         system(chown_cmd.c_str());
     }
+    delete(p_tmplate);
     return Status::OK;
 }
 
