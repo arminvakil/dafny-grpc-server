@@ -13,8 +13,12 @@ services:
       replicas: 3
       placement:
         constraints:
-          - node.role == worker  # Ensure gRPC servers run on worker nodes
-    command: /home/dafny-grpc-server/bazel-bin/src/server -d /home/dafny/Binaries/Dafny -j 1 #-nfs and then the file location of a docker image that runs NFS
+          - node.role == worker
+    command: /home/dafny-grpc-server/bazel-bin/src/server -d /home/dafny/Binaries/Dafny -j 1 -n /mnt/nfs #-nfs and then the file location of a docker image that runs NFS
+    volumes:
+      - nfs-data:/mnt/nfs
+    #cap_add:
+      #- SYS_ADMIN
     ports:
       - "50051:50051"
     networks:
@@ -29,7 +33,19 @@ services:
   #     mode: global  # Ensures it runs only on the manager node
   #    networks:
   #     - swarm_net
-
+  nfs-server:
+    image: itsthenetwork/nfs-server-alpine:latest
+    container_name: nfs-server
+    privileged: true
+    environment:
+      - SHARED_DIRECTORY=/exports
+    volumes:
+      - nfs-data:/exports
+      #- /proc/fs/nfsd:/proc/fs/nfsd
+    networks:
+      - swarm_net
+    ports:
+      - "2049:2049"
   nginx:
     image: nginx:1.20.0
     container_name: nginx
@@ -63,3 +79,5 @@ networks:
     driver: overlay
 
 
+volumes:
+  nfs-data:
